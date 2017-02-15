@@ -81,8 +81,27 @@ kube::bootstrap::restart_docker(){
       sleep 1
     done
     service docker start
+  elif kube::helpers::command_exists emerge; then
+    DOCKER_CONF="/etc/conf.d/docker"
+    kube::helpers::backup_file ${DOCKER_CONF}
+
+    # Is there an uncommented DOCKER_OPTS line at all?
+    if [[ -z $(grep "DOCKER_OPTS" $DOCKER_CONF | grep -v "#") ]]; then
+      echo "DOCKER_OPTS=\"--mtu=${FLANNEL_MTU} --bip=${FLANNEL_SUBNET} \"" >> ${DOCKER_CONF}
+    else
+      sed -e "s@DOCKER_OPTS=\"\"@DOCKER_OPTS=\"--mtu="$FLANNEL_MTU" --bip="$FLANNEL_SUBNET"\"@g" -i ${DOCKER_CONF}
+    fi
+
+    kube::multinode::delete_bridge docker0
+    service docker stop
+    while [[ $(ps aux | grep $(which docker) | grep -v grep | wc -l) -gt 0 ]]; do
+      kube::log::status "Waiting for docker to terminate"
+      sleep 1
+    done
+    service docker start
+    sleep 5
   else
-    kube::log::fatal "Error: docker-bootstrap currently only supports ubuntu|debian|amzn|centos|systemd."
+    kube::log::fatal "Error: docker-bootstrap currently only supports ubuntu|debian|amzn|centos|gentoo|systemd."
   fi
 
   kube::log::status "Restarted docker with the new flannel settings"
